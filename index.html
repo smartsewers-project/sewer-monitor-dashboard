@@ -1295,15 +1295,18 @@ function updateSVG(mh1Level, mh2Level, flowrate) {
   animateManhole('mh1', mh1Level, MH1_SVG);
   animateManhole('mh2', mh2Level, MH2_SVG);
 
-  /* Readings */
-  setElText('manhole1reading', mh1Level.toFixed(1));
-  setElText('manhole2reading', mh2Level.toFixed(1));
+  /* Calculate percentages out of 18.5cm and round to whole numbers */
+  const mh1Percentage = Math.round((mh1Level / 18.5) * 100);
+  const mh2Percentage = Math.round((mh2Level / 18.5) * 100);
+  
+  /* Readings with percentages */
+  setElText('manhole1reading', `${mh1Level.toFixed(1)}cm (${mh1Percentage}%)`);
+  setElText('manhole2reading', `${mh2Level.toFixed(1)}cm (${mh2Percentage}%)`);
   setElText('flowratereading', flowrate.toFixed(2));
 
   /* Flow dial */
   animateFlowDial(flowrate);
 }
-
 function animateManhole(id, level, bounds) {
   const physMax = cfg?.global?.manhole1_physical_max_cm ?? 18.5;
   const clamped = Math.min(level, physMax);
