@@ -1381,7 +1381,9 @@ function updateCard(id, level, interp) {
   const pct     = Math.min((level / opMax) * 100, 100).toFixed(1);
   const barColor = cfg?.barColors?.[interp.primary] ?? interp.fill;
 
-  setElText(`${id}-reading`, level.toFixed(1));
+  // Calculate percentage out of 18.5cm (physical max) and round to whole number
+  const percentageOutOf18_5 = Math.round((level / 18.5) * 100);
+  setElText(`${id}-reading`, `${level.toFixed(1)}cm (${percentageOutOf18_5}%)`);
 
   const badge = document.getElementById(`${id}-badge`);
   if (badge) {
