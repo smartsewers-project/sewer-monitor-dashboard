@@ -1,0 +1,1640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SewerWatch – Live Pipeline Monitoring</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<!-- date adapter for Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- Firebase modular v9 compat -->
+<script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
+
+<style>
+/* ============================================================
+   CSS VARIABLES & RESET
+   ============================================================ */
+:root {
+  --teal-900: #0d3d38;
+  --teal-700: #0f6b62;
+  --teal-500: #14b8a6;
+  --teal-300: #5eead4;
+  --teal-100: #ccfbf1;
+  --teal-50:  #f0fdfa;
+
+  --orange-700: #c2410c;
+  --orange-500: #f97316;
+  --orange-300: #fdba74;
+  --orange-100: #ffedd5;
+
+  --grey-900: #111827;
+  --grey-700: #374151;
+  --grey-500: #6b7280;
+  --grey-300: #d1d5db;
+  --grey-100: #f3f4f6;
+  --grey-50:  #f9fafb;
+
+  --red-700:   #b91c1c;
+  --red-500:   #ef4444;
+  --red-100:   #fee2e2;
+  --red-50:    #fef2f2;
+
+  --yellow-700: #a16207;
+  --yellow-500: #eab308;
+  --yellow-100: #fef9c3;
+
+  --green-700:  #15803d;
+  --green-500:  #22c55e;
+  --green-100:  #dcfce7;
+
+  --blue-700:   #1d4ed8;
+  --blue-100:   #dbeafe;
+
+  --white: #ffffff;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.05);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.05);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,.10), 0 4px 8px rgba(0,0,0,.05);
+
+  --header-h: 64px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--grey-50);
+  color: var(--grey-900);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  height: var(--header-h);
+  background: var(--teal-900);
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 16px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.25);
+}
+.header-logo {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--white); text-decoration: none;
+}
+.header-logo-icon {
+  width: 36px; height: 36px;
+  background: var(--teal-500); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+}
+.header-title { font-size: 18px; font-weight: 700; letter-spacing: -.4px; }
+.header-subtitle { font-size: 11px; font-weight: 400; color: var(--teal-300); letter-spacing: .5px; text-transform: uppercase; }
+.header-spacer { flex: 1; }
+.header-status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--teal-300); }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--green-500); box-shadow: 0 0 6px var(--green-500);
+  animation: pulse 2s infinite;
+}
+.status-dot.offline { background: var(--red-500); box-shadow: 0 0 6px var(--red-500); animation: none; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.header-time {
+  font-family: 'DM Mono', monospace; font-size: 13px;
+  color: var(--white); background: rgba(255,255,255,.1);
+  padding: 4px 10px; border-radius: 4px;
+}
+
+.main-content {
+  max-width: 1400px; margin: 0 auto;
+  padding: 24px 20px 48px;
+  display: flex; flex-direction: column; gap: 24px;
+}
+
+.section-label {
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--grey-500); margin-bottom: 12px;
+}
+
+/* ============================================================
+   CARD
+   ============================================================ */
+.card {
+  background: var(--white); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md); overflow: hidden;
+}
+.card-header { padding: 18px 22px 0; display: flex; align-items: center; gap: 10px; }
+.card-title { font-size: 15px; font-weight: 600; color: var(--grey-900); }
+.card-body { padding: 18px 22px 22px; }
+
+/* ============================================================
+   ALERTS
+   ============================================================ */
+#alerts-section { display: flex; flex-direction: column; gap: 8px; }
+.alert-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 16px; border-radius: var(--radius-md);
+  animation: slideIn .3s ease;
+}
+@keyframes slideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.alert-badge {
+  flex-shrink: 0; padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; letter-spacing: .5px;
+  text-transform: uppercase; white-space: nowrap;
+}
+.alert-text { font-size: 13.5px; line-height: 1.5; color: var(--grey-700); }
+.no-alerts {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; background: var(--green-100);
+  border-radius: var(--radius-md); font-size: 13.5px;
+  color: var(--green-700); font-weight: 500;
+}
+
+/* ============================================================
+   SVG ANIMATION AREA
+   ============================================================ */
+.svg-wrapper {
+  width: 100%; overflow-x: auto;
+  background: linear-gradient(135deg, var(--teal-50) 0%, var(--white) 100%);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-md);
+  padding: 20px; display: flex; align-items: center; justify-content: center;
+  min-height: 380px; position: relative;
+}
+.svg-scale-container { width: 100%; display: flex; justify-content: center; }
+.svg-scale-container svg { max-width: 100%; height: auto; display: block; }
+
+/* ============================================================
+   CHARTS
+   ============================================================ */
+.charts-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+}
+@media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+.chart-container { position: relative; height: 280px; }
+
+/* ============================================================
+   MANHOLE CARDS
+   ============================================================ */
+.manhole-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+.manhole-card { position: relative; }
+.manhole-card-badge {
+  position: absolute; top: 18px; right: 18px;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+}
+.manhole-name { font-size: 16px; font-weight: 700; color: var(--grey-900); margin-bottom: 4px; }
+.manhole-meta { font-size: 12px; color: var(--grey-500); margin-bottom: 16px; line-height: 1.6; }
+.manhole-reading {
+  font-family: 'DM Mono', monospace; font-size: 36px; font-weight: 500;
+  color: var(--teal-700); line-height: 1; margin-bottom: 4px;
+}
+.manhole-unit { font-size: 13px; color: var(--grey-500); margin-bottom: 14px; }
+.progress-track {
+  height: 10px; background: var(--grey-100);
+  border-radius: 99px; overflow: hidden; margin-bottom: 8px;
+}
+.progress-bar {
+  height: 100%; border-radius: 99px;
+  transition: width .8s cubic-bezier(.4,0,.2,1), background .5s;
+  position: relative; overflow: hidden;
+}
+.progress-bar::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.35) 50%, transparent 100%);
+  animation: shimmer 2s infinite;
+}
+@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+.progress-labels {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--grey-500); margin-bottom: 16px;
+}
+.btn-directions {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--teal-50); color: var(--teal-700);
+  border: 1.5px solid var(--teal-300); padding: 8px 16px;
+  border-radius: 8px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all .2s; font-family: 'DM Sans', sans-serif;
+}
+.btn-directions:hover { background: var(--teal-100); border-color: var(--teal-500); }
+
+/* ============================================================
+   MAP MODAL
+   ============================================================ */
+.map-modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  z-index: 1000; display: none; align-items: center;
+  justify-content: center; padding: 20px;
+}
+.map-modal-overlay.active { display: flex; }
+.map-modal {
+  background: var(--white); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg); width: 100%; max-width: 800px;
+  max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;
+}
+.map-modal-header {
+  padding: 16px 20px; display: flex; align-items: center;
+  justify-content: space-between; border-bottom: 1px solid var(--grey-100);
+}
+.map-modal-title { font-size: 15px; font-weight: 600; }
+.btn-close {
+  width: 32px; height: 32px; border: none; background: var(--grey-100);
+  border-radius: 8px; cursor: pointer; display: flex;
+  align-items: center; justify-content: center;
+  font-size: 16px; color: var(--grey-700); transition: background .2s;
+}
+.btn-close:hover { background: var(--grey-300); }
+#map-container { flex: 1; min-height: 400px; }
+
+/* ============================================================
+   HISTORICAL DATA
+   ============================================================ */
+.hist-controls {
+  display: flex; flex-wrap: wrap; gap: 12px;
+  align-items: flex-end; margin-bottom: 20px;
+}
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-label {
+  font-size: 12px; font-weight: 500; color: var(--grey-500);
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.form-input {
+  padding: 8px 12px; border: 1.5px solid var(--grey-300);
+  border-radius: 8px; font-family: 'DM Sans', sans-serif;
+  font-size: 13px; color: var(--grey-900); background: var(--white);
+  outline: none; transition: border-color .2s;
+}
+.form-input:focus { border-color: var(--teal-500); }
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--teal-700); color: var(--white); border: none;
+  padding: 9px 18px; border-radius: 8px; font-size: 13px;
+  font-weight: 600; cursor: pointer; transition: background .2s;
+  font-family: 'DM Sans', sans-serif;
+}
+.btn-primary:hover { background: var(--teal-900); }
+.btn-secondary {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--white); color: var(--teal-700);
+  border: 1.5px solid var(--teal-500); padding: 8px 18px;
+  border-radius: 8px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all .2s; font-family: 'DM Sans', sans-serif;
+}
+.btn-secondary:hover { background: var(--teal-50); }
+.hist-chart-container { position: relative; height: 300px; margin-top: 20px; }
+.hist-records-label { font-size: 12px; color: var(--grey-500); margin-top: 10px; }
+
+/* ============================================================
+   LOADING OVERLAY
+   ============================================================ */
+#loading-overlay {
+  position: fixed; inset: 0; background: var(--teal-900);
+  z-index: 9999; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 20px;
+  transition: opacity .5s;
+}
+#loading-overlay.hidden { opacity: 0; pointer-events: none; }
+.loader-logo { font-size: 28px; font-weight: 700; color: var(--white); }
+.loader-bar-track { width: 200px; height: 4px; background: rgba(255,255,255,.2); border-radius: 99px; overflow: hidden; }
+.loader-bar { height: 100%; width: 0%; background: var(--teal-300); border-radius: 99px; animation: loadBar 2s ease forwards; }
+@keyframes loadBar { to { width: 100%; } }
+.loader-text { font-size: 13px; color: var(--teal-300); }
+
+/* ============================================================
+   SVG CLIP TRANSITIONS
+   ============================================================ */
+#manhole1rcontents, #manhole2rcontents {
+  transition: fill .5s, opacity .5s;
+}
+#mh1-clip-rect, #mh2-clip-rect {
+  transition: y .8s cubic-bezier(.4,0,.2,1), height .8s cubic-bezier(.4,0,.2,1);
+}
+#flowrate1dial, #flowrate2dial {
+  transition: transform .8s cubic-bezier(.4,0,.2,1);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 640px) {
+  .header-time { display: none; }
+  .hist-controls { flex-direction: column; }
+  .manhole-reading { font-size: 28px; }
+}
+
+/* MISC */
+.font-mono { font-family: 'DM Mono', monospace; }
+.text-xs { font-size: 11px; }
+.text-muted { color: var(--grey-500); }
+.mt-1 { margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     LOADING OVERLAY
+     ============================================================ -->
+<div id="loading-overlay">
+  <div class="loader-logo">SewerWatch</div>
+  <div class="loader-bar-track"><div class="loader-bar"></div></div>
+  <div class="loader-text">Connecting to Firebase...</div>
+</div>
+
+<!-- ============================================================
+     HEADER
+     ============================================================ -->
+<header class="app-header">
+  <div class="header-logo">
+    <div class="header-logo-icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12h4l3-9 4 18 3-9h4"/>
+      </svg>
+    </div>
+    <div>
+      <div class="header-title">SewerWatch</div>
+      <div class="header-subtitle">Live Pipeline Monitor</div>
+    </div>
+  </div>
+  <div class="header-spacer"></div>
+  <div class="header-status">
+    <div class="status-dot" id="conn-dot"></div>
+    <span id="conn-label">Connecting...</span>
+  </div>
+  <div class="header-time" id="header-time">--:--:--</div>
+</header>
+
+<!-- ============================================================
+     MAIN CONTENT
+     ============================================================ -->
+<div class="main-content">
+
+  <!-- ALERTS -->
+  <section>
+    <div class="section-label">Active Alerts</div>
+    <div id="alerts-section">
+      <div class="no-alerts">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Loading sensor data...
+      </div>
+    </div>
+  </section>
+
+  <!-- SVG DIAGRAM -->
+  <section>
+    <div class="section-label">Pipeline Diagram – Live View</div>
+    <div class="svg-wrapper" id="svg-wrapper">
+      <div class="svg-scale-container" id="svg-scale-container">
+
+        <!-- ============================================================
+             NEW SVG — DUAL FLOWRATE GAUGES
+             IDs used by JavaScript:
+               manhole1rcontents  — Manhole 1 water fill path
+               manhole2rcontents  — Manhole 2 water fill path
+               mh1-clip-rect      — Manhole 1 clip rect (injected by JS into <defs>)
+               mh2-clip-rect      — Manhole 2 clip rect (injected by JS into <defs>)
+               manhole1reading    — Manhole 1 level text
+               manhole2reading    — Manhole 2 level text
+               flowrate1reading   — Flowrate 1 value text
+               flowrate2reading   — Flowrate 2 value text
+               flowrate1dial      — Flowrate 1 needle
+               flowrate2dial      — Flowrate 2 needle
+             ============================================================ -->
+        <svg
+          width="1280"
+          height="720"
+          overflow="hidden"
+          version="1.1"
+          id="pipeline-svg"
+          viewBox="0 0 1280 720"
+          xmlns="http://www.w3.org/2000/svg">
+
+          <defs>
+            <!-- Gauge arc colour gradients -->
+            <linearGradient x1="375.798" y1="383.036" x2="494.221" y2="383.036"
+              gradientUnits="userSpaceOnUse" spreadMethod="reflect" id="stroke0">
+              <stop offset="0"   stop-color="#00B050"/>
+              <stop offset="0.5" stop-color="#FFFF00"/>
+              <stop offset="1"   stop-color="#FF0000"/>
+            </linearGradient>
+            <linearGradient x1="766.803" y1="384.286" x2="886.218" y2="384.286"
+              gradientUnits="userSpaceOnUse" spreadMethod="reflect" id="stroke1">
+              <stop offset="0"   stop-color="#00B050"/>
+              <stop offset="0.5" stop-color="#FFFF00"/>
+              <stop offset="1"   stop-color="#FF0000"/>
+            </linearGradient>
+
+            <!-- Clip paths for manhole water fill — rects updated by JS -->
+            <clipPath id="mh1-clip"><rect id="mh1-clip-rect" x="133" y="479" width="180" height="0"/></clipPath>
+            <clipPath id="mh2-clip"><rect id="mh2-clip-rect" x="935" y="592" width="181" height="0"/></clipPath>
+          </defs>
+
+          <!-- Background -->
+          <rect x="0" y="0" width="1280" height="720" fill="#FFFFFF"/>
+
+          <!-- ── MANHOLE WATER FILLS (clipped) ── -->
+          <path
+            d="M 156.875,286.549 c 22.375,0.615 44.75,6.762 67.125,1.844 29.833,-6.557 59.667,6.557 89.5,0 v 8.622 89.584 92.901 h -179 v -92.901 -89.584 -8.622 c 7.458,-1.639 14.917,-2.049 22.375,-1.844 z"
+            fill="#8FAADC" fill-rule="evenodd"
+            id="manhole1rcontents"
+            clip-path="url(#mh1-clip)"/>
+
+          <path
+            d="M958 421.543C980.5 422.085 1003 427.499 1025.5 423.167 1055.5 417.391 1085.5 428.943 1115.5 423.167L1115.5 430.762 1115.5 509.67 1115.5 591.5 935.5 591.5 935.5 509.67 935.5 430.762 935.5 423.167C943 421.723 950.5 421.362 958 421.543Z"
+            fill="#8FAADC" fill-rule="evenodd"
+            id="manhole2rcontents"
+            clip-path="url(#mh2-clip)"/>
+
+          <!-- ── STRUCTURAL ELEMENTS ── -->
+          <!-- Manhole 1 shell -->
+          <rect x="133" y="206" width="180" height="273" stroke="#172C51" stroke-width="8" stroke-miterlimit="8" fill="none"/>
+          <!-- Connecting pipe -->
+          <rect x="315" y="382" width="623" height="37" stroke="#172C51" stroke-width="8" stroke-miterlimit="8" fill="none"/>
+          <!-- Manhole 2 shell -->
+          <rect x="935" y="319" width="181" height="273" stroke="#172C51" stroke-width="8" stroke-miterlimit="8" fill="none"/>
+          <!-- Inlet box -->
+          <rect x="73"  y="246" width="58"  height="37" stroke="#172C51" stroke-width="8" stroke-miterlimit="8" fill="#4472C4"/>
+          <!-- Outlet box -->
+          <rect x="1118" y="513" width="83" height="36" stroke="#172C51" stroke-width="8" stroke-miterlimit="8" fill="none"/>
+
+          <!-- Flow arrows -->
+          <path d="M315 384 315 368 329 384Z" fill="#172C51" fill-rule="evenodd"/>
+          <path d="M0 16 0 0 14 16Z" fill="#172C51" fill-rule="evenodd" transform="matrix(1 0 0 -1 315 433)"/>
+          <path d="M933 417 933 433 918 417Z" fill="#172C51" fill-rule="evenodd"/>
+          <path d="M0 16 0 0 14 16Z" fill="#172C51" fill-rule="evenodd" transform="matrix(-1 0 0 1 932 368)"/>
+
+          <!-- Inlet fill -->
+          <rect x="66" y="249" width="72" height="31" fill="#8FAADC"/>
+
+          <!-- Outlet arrows -->
+          <path d="M0 16 0 0 15 16Z" fill="#172C51" fill-rule="evenodd" transform="matrix(1 0 0 -1 1116 564)"/>
+          <path d="M1115 514 1115 499 1130 514Z" fill="#172C51" fill-rule="evenodd"/>
+
+          <!-- MH1 entry arrows -->
+          <path d="M135 281 135 297 120 281Z" fill="#172C51" fill-rule="evenodd"/>
+          <path d="M0 16 0 0 15 16Z" fill="#172C51" fill-rule="evenodd" transform="matrix(-1 0 0 1 135 232)"/>
+          <!-- Inlet arrow label -->
+          <path d="M77 260 99.2549 260 99.2549 268 77 268ZM95.2549 252 119.255 264 95.2549 276Z" fill="#FFFFFF"/>
+
+          <!-- Pipe fill -->
+          <rect x="307.5" y="385.5" width="636" height="30" stroke="#8FAADC" stroke-width="1.33333" stroke-miterlimit="8" fill="#8FAADC"/>
+
+          <!-- Outlet box fill -->
+          <rect x="1111.5" y="516.5" width="95" height="30" stroke="#8FAADC" stroke-width="1.33333" stroke-miterlimit="8" fill="#8FAADC"/>
+
+          <!-- Outlet arrow decorators -->
+          <path d="M1174 562 1192.51 562 1192.51 566 1174 566ZM1185.83 555.495 1195.55 564 1185.83 572.505C1185 573.233 1183.73 573.148 1183 572.317 1182.28 571.486 1182.36 570.222 1183.19 569.495L1191.19 562.495 1191.19 565.505 1183.19 558.505C1182.36 557.778 1182.28 556.514 1183 555.683 1183.73 554.852 1185 554.768 1185.83 555.495Z" fill="#FFFFFF"/>
+          <path d="M1145 527 1167.25 527 1167.25 535 1145 535ZM1163.25 519 1187.25 531 1163.25 543Z" fill="#FFFFFF"/>
+
+          <!-- Mid-pipe arrows -->
+          <path d="M700 397 722.255 397 722.255 405 700 405ZM718.255 389 742.255 401 718.255 413Z" fill="#FFFFFF"/>
+          <path d="M531 397 553.255 397 553.255 405 531 405ZM549.255 389 573.255 401 549.255 413Z" fill="#FFFFFF"/>
+
+          <!-- ── GAUGE 1 (Flowrate 1) ── -->
+          <path d="M435 344.5C468.413 344.5 495.5 371.887 495.5 405.67L494.321 417.5 375.68 417.5 374.5 405.67C374.5 371.887 401.587 344.5 435 344.5Z"
+            stroke="#172C51" stroke-width="3" stroke-miterlimit="8" fill="#FFFFFF" fill-rule="evenodd"/>
+          <path d="M384.035 402.596C388.122 372.536 414.253 351.706 442.401 356.071 465.247 359.614 483.095 378.961 486.07 403.411"
+            stroke="url(#stroke0)" stroke-width="14.6667" stroke-miterlimit="8" fill="none" fill-rule="evenodd"/>
+
+          <!-- Flowrate 1 needle -->
+          <path
+            d="M 2.66931,0 5.33827,42.2977 H 5.30774 c 0,1.0006 -1.18817,1.8118 -2.65387,1.8118 C 1.18817,44.1095 0,43.2983 0,42.2977 l 4.62548e-4,-0.0015 z"
+            stroke="#172c51" stroke-width="1.33333" stroke-miterlimit="8"
+            fill="#172c51" fill-rule="evenodd"
+            transform="matrix(-0.136263,0.990673,0.990673,0.136263,390.534,399.558)"
+            id="flowrate1dial"/>
+
+          <!-- ── GAUGE 2 (Flowrate 2) ── -->
+          <path d="M826.5 346.5C860.189 346.5 887.5 373.887 887.5 407.67L886.311 419.5 766.689 419.5 765.5 407.67C765.5 373.887 792.811 346.5 826.5 346.5Z"
+            stroke="#172C51" stroke-width="3" stroke-miterlimit="8" fill="#FFFFFF" fill-rule="evenodd"/>
+          <path d="M775.04 404.02C779.17 373.687 805.557 352.669 833.977 357.077 857.042 360.654 875.06 380.174 878.066 404.842"
+            stroke="url(#stroke1)" stroke-width="14.6667" stroke-miterlimit="8" fill="none" fill-rule="evenodd"/>
+
+          <!-- Flowrate 2 needle -->
+          <path
+            d="M2.66931 0 5.33827 42.2977 5.30774 42.2977C5.30774 43.2983 4.11957 44.1095 2.65387 44.1095 1.18817 44.1095 0 43.2983 0 42.2977L0.000462548 42.2962Z"
+            stroke="#172C51" stroke-width="1.33333" stroke-miterlimit="8"
+            fill="#172C51" fill-rule="evenodd"
+            transform="matrix(-0.15852,-0.987356,-0.987356,0.15852,870.59,407.174)"
+            id="flowrate2dial"/>
+
+          <!-- ── LABELS ── -->
+          <text font-family="Cambria,sans-serif" font-weight="700" font-size="14.4667" x="146" y="133">Sewer Level – Manhole 1</text>
+          <text font-family="Cambria,sans-serif" font-weight="700" font-size="14.4667" x="396" y="274">Flowrate 1</text>
+          <text font-family="Cambria,sans-serif" font-weight="700" font-size="14.4667" x="781" y="275">Flowrate 2</text>
+          <text font-family="Cambria,sans-serif" font-weight="700" font-size="14.4667" x="947" y="251">Sewer Level – Manhole 2</text>
+
+          <!-- ── READING TEXTS ── -->
+          <text font-family="Cambria Math,sans-serif" font-weight="400" font-size="32.5067" x="165" y="171" id="manhole1reading">00%</text>
+          <text font-family="Cambria Math,sans-serif" font-weight="400" font-size="32.5067" x="960" y="290" id="manhole2reading">00%</text>
+          <text font-family="Cambria Math,sans-serif" font-weight="400" font-size="32.5067" x="390" y="309" id="flowrate1reading">0.0</text>
+          <text font-family="Cambria Math,sans-serif" font-weight="400" font-size="14.4667" x="394" y="329">L/min</text>
+          <text font-family="Cambria Math,sans-serif" font-weight="400" font-size="32.5067" x="778" y="312" id="flowrate2reading">0.0</text>
+          <text font-family="Cambria Math,sans-serif" font-weight="400" font-size="14.4667" x="782" y="331">L/min</text>
+
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- REALTIME CHARTS -->
+  <section>
+    <div class="section-label">Realtime Trends</div>
+    <div class="charts-grid">
+      <div class="card">
+        <div class="card-header">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--teal-500)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <div class="card-title">Manhole Levels (%)</div>
+        </div>
+        <div class="card-body">
+          <div class="chart-container"><canvas id="chart-levels"></canvas></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--orange-500)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 0c-3.31 0-6 2.69-6 6a6 6 0 0 0 12 0c0-3.31-2.69-6-6-6z"/></svg>
+          <div class="card-title">Flowrates (L/min)</div>
+        </div>
+        <div class="card-body">
+          <div class="chart-container"><canvas id="chart-flowrate"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MANHOLE CARDS -->
+  <section>
+    <div class="section-label">Manhole Information</div>
+    <div class="manhole-grid">
+      <!-- Manhole 1 -->
+      <div class="card manhole-card" id="mh1-card">
+        <div class="card-body">
+          <div class="manhole-card-badge" id="mh1-badge">--</div>
+          <div class="manhole-name">Manhole 1</div>
+          <div class="manhole-meta" id="mh1-meta">
+            <div id="mh1-address">--</div>
+            <div class="font-mono text-xs mt-1" id="mh1-coords">--</div>
+          </div>
+          <div class="manhole-reading" id="mh1-reading">--</div>
+          <div class="manhole-unit">% fill level</div>
+          <div class="progress-track">
+            <div class="progress-bar" id="mh1-bar" style="width:0%;background:var(--teal-500)"></div>
+          </div>
+          <div class="progress-labels">
+            <span>0%</span>
+            <span id="mh1-bar-max">-- % (op. max)</span>
+          </div>
+          <button class="btn-directions" onclick="openMap('mh1')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+            View Directions
+          </button>
+        </div>
+      </div>
+
+      <!-- Manhole 2 -->
+      <div class="card manhole-card" id="mh2-card">
+        <div class="card-body">
+          <div class="manhole-card-badge" id="mh2-badge">--</div>
+          <div class="manhole-name">Manhole 2</div>
+          <div class="manhole-meta" id="mh2-meta">
+            <div id="mh2-address">--</div>
+            <div class="font-mono text-xs mt-1" id="mh2-coords">--</div>
+          </div>
+          <div class="manhole-reading" id="mh2-reading">--</div>
+          <div class="manhole-unit">% fill level</div>
+          <div class="progress-track">
+            <div class="progress-bar" id="mh2-bar" style="width:0%;background:var(--teal-500)"></div>
+          </div>
+          <div class="progress-labels">
+            <span>0%</span>
+            <span id="mh2-bar-max">-- % (op. max)</span>
+          </div>
+          <button class="btn-directions" onclick="openMap('mh2')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+            View Directions
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HISTORICAL DATA -->
+  <section>
+    <div class="section-label">Historical Data Viewer</div>
+    <div class="card">
+      <div class="card-body">
+        <div class="hist-controls">
+          <div class="form-group">
+            <label class="form-label">From</label>
+            <input type="datetime-local" class="form-input" id="hist-from"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">To</label>
+            <input type="datetime-local" class="form-input" id="hist-to"/>
+          </div>
+          <button class="btn-primary" onclick="loadHistorical()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Query
+          </button>
+          <button class="btn-secondary" onclick="exportCSV()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export CSV
+          </button>
+        </div>
+        <div class="hist-chart-container">
+          <canvas id="chart-historical"></canvas>
+        </div>
+        <div class="hist-records-label" id="hist-count">No records loaded yet.</div>
+      </div>
+    </div>
+  </section>
+
+</div><!-- /main-content -->
+
+<!-- MAP MODAL -->
+<div class="map-modal-overlay" id="map-modal">
+  <div class="map-modal">
+    <div class="map-modal-header">
+      <div class="map-modal-title" id="map-modal-title">Location</div>
+      <button class="btn-close" onclick="closeMap()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="map-container"></div>
+  </div>
+</div>
+
+<!-- ============================================================
+     JAVASCRIPT
+     ============================================================ -->
+<script>
+'use strict';
+
+/* ============================================================
+   ╔══════════════════════════════════════════════════════════╗
+   ║          FIREBASE CONFIGURATION — EDIT HERE             ║
+   ╚══════════════════════════════════════════════════════════╝
+   DB_A  = Primary RTDB  → live sensor readings
+   DB_B  = Config RTDB   → dashboard configuration
+   DB_C  = Firestore     → historical data storage
+   ============================================================ */
+const FIREBASE_CONFIG_A = {
+  apiKey:            "AIzaSyBZsrUZF7QdWU6v5cXTCXdpJtzlS1iq9mI",
+  authDomain:        "sewer-monitor.firebaseapp.com",
+  databaseURL:       "https://sewer-monitor-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:         "sewer-monitor",
+  storageBucket:     "sewer-monitor.firebasestorage.app",
+  messagingSenderId: "523435038794",
+  appId:             "1:523435038794:web:a83ea8a357b93c4fa26eb3"
+};
+
+const FIREBASE_CONFIG_B = {
+  apiKey:            "AIzaSyDUdXzY8VdSJcNR_iy1TBBCLJWeHWnkmH8",
+  authDomain:        "sewer-dashboard-config.firebaseapp.com",
+  databaseURL:       "https://sewer-dashboard-config-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:         "sewer-dashboard-config",
+  storageBucket:     "sewer-dashboard-config.firebasestorage.app",
+  messagingSenderId: "313913179523",
+  appId:             "1:313913179523:web:8535a2d0eee4d3380c8ab6"
+};
+
+const FIREBASE_CONFIG_C = {
+  apiKey:            "AIzaSyBcMxxiiqHof5zNSV0kBk1TbweQ4srSqlA",
+  authDomain:        "sewer-historical-data.firebaseapp.com",
+  projectId:         "sewer-historical-data",
+  storageBucket:     "sewer-historical-data.firebasestorage.app",
+  messagingSenderId: "110714449263",
+  appId:             "1:110714449263:web:2c4f717f4193122d7e4c9a"
+};
+
+/* ============================================================
+   ╔══════════════════════════════════════════════════════════╗
+   ║     RTDB NODE / SUBNODE NAMES — EDIT HERE IF ESP32      ║
+   ║     FIRMWARE CHANGES THE FIELD NAMES                    ║
+   ╚══════════════════════════════════════════════════════════╝
+
+   RTDB_ROOT_NODE   : top-level node in DB_A  (e.g. "sewer")
+   FIELD_FLOW1      : flowrate at manhole 1   (e.g. "flow1")
+   FIELD_FLOW2      : flowrate at manhole 2   (e.g. "flow2")
+   FIELD_LEVEL1_PCT : manhole 1 level %       (e.g. "level1_percent")
+   FIELD_LEVEL2_PCT : manhole 2 level %       (e.g. "level2_percent")
+
+   Example: if the ESP32 is updated so that the node becomes
+   "sewerData" and fields become "mh1flow", "mh2flow",
+   "mh1pct", "mh2pct" — just change the four constants below.
+   ============================================================ */
+const RTDB_ROOT_NODE   = 'sewer';
+const FIELD_FLOW1      = 'flow1';
+const FIELD_FLOW2      = 'flow2';
+const FIELD_LEVEL1_PCT = 'mh1';
+const FIELD_LEVEL2_PCT = 'mh2';
+
+/* Firestore historical collection name */
+const HIST_COLLECTION  = 'sensorHistory';
+
+/* ============================================================
+   GLOBALS
+   ============================================================ */
+let appA, dbA, appB, dbB, appC, firestoreC;
+let sensorData        = {};
+let chartLevels, chartFlowrate, chartHistorical;
+let leafletMap        = null;
+let histRecords       = [];
+let lastLoggedMinute  = -1;
+
+/* State for rise-rate calculation */
+let prevLevel1Pct     = null;   // previous level1_percent reading
+let currentRiseRate   = 0;      // riseRate = current − previous
+
+const CHART_MAX_POINTS = 60;
+
+/* ============================================================
+   SVG BOUNDS (in SVG coordinate space)
+   Manhole 1: shell rect x=133 y=206 h=273 → bottom = 479
+   Manhole 2: shell rect x=935 y=319 h=273 → bottom = 592
+   These are the top/bottom of the fillable area used by
+   the clip-rect animation.
+   ============================================================ */
+const MH1_SVG = { top: 206, bottom: 479 };   // shell top & bottom y
+const MH2_SVG = { top: 319, bottom: 592 };   // shell top & bottom y
+
+/* ============================================================
+   GAUGE PIVOT POINTS & NEEDLE SWEEP
+   Determined from the SVG: each gauge bowl centre.
+   Gauge 1 bowl centre ≈ (435, 405.67)
+   Gauge 2 bowl centre ≈ (826.5, 407.67)
+   The needle paths in the SVG have their transform origins
+   embedded. We rotate around the bowl pivot.
+   Sweep: −90° (full left = 0 flow) → +90° (full right = max)
+   ============================================================ */
+const GAUGE1_PIVOT = { cx: 435,   cy: 405.67 };
+const GAUGE2_PIVOT = { cx: 826.5, cy: 407.67 };
+
+/* ============================================================
+   DEFAULT / FALLBACK DASHBOARD CONFIG
+   (used when DB_B is unreachable)
+   NOTE: op_max values are expressed as % of physical max
+         (18.5 cm physical = 100 %).
+         11 cm op_max = (11/18.5)*100 = 59.46 %
+   ============================================================ */
+const DEFAULT_CONFIG = {
+  global: {
+    /* Manhole fill thresholds — now in % (0–100) */
+    manhole1_physical_max_pct: 100,
+    manhole1_op_max_pct:        59.46,   /* 11/18.5 * 100 */
+    manhole2_physical_max_pct: 100,
+    manhole2_op_max_pct:        59.46,
+
+    /* Flowrate thresholds (L/min) — same for both meters */
+    flowrate_op_max:            3.0,
+    flowrate_extreme_max:       3.4,
+
+    /* Chart */
+    chart_rolling_points:       60,
+
+    /* ── NEW interpretation thresholds ────────────────────
+       FLOW_EQUALITY_DEVIATION : max |flow1 − flow2| still
+                                  considered "equal" (NORMAL)
+       LOW_FLOW_THRESHOLD      : flow1 below this = low-flow
+                                  condition for MH1 blockage
+       RAPID_RISE_THRESHOLD    : rise-rate (pct pts per read)
+                                  above this = rapid rise
+       CRITICAL_PERCENT        : level ≥ this % → CRITICAL
+    ─────────────────────────────────────────────────────── */
+    flow_equality_deviation:    0.05,    /* L/min */
+    low_flow_threshold:         0.5,     /* L/min */
+    rapid_rise_threshold:       2.0,     /* % per reading */
+    critical_percent:           59.46    /* = op_max % */
+  },
+  manholes: {
+    mh1: {
+      address: "Main St & River Ave, Zone A",
+      coords:  { lat: -17.8252, lng: 31.0335 }
+    },
+    mh2: {
+      address: "Industrial Rd & Park Blvd, Zone B",
+      coords:  { lat: -17.8280, lng: 31.0390 }
+    }
+  },
+  /* Kept only for NORMAL manhole-level colour scheme */
+  interpretations: {
+    manhole1: {
+      normal: {
+        primary:        "NORMAL",
+        secondary:      "Manhole 1 level is within safe operating range.",
+        fill:           "#22c55e",
+        fontColor:      "#ffffff",
+        alertBg:        "#dcfce7",
+        alertTextColor: "#15803d"
+      }
+    },
+    manhole2: {
+      normal: {
+        primary:        "NORMAL",
+        secondary:      "Manhole 2 level is within safe operating range.",
+        fill:           "#22c55e",
+        fontColor:      "#ffffff",
+        alertBg:        "#dcfce7",
+        alertTextColor: "#15803d"
+      }
+    }
+  },
+  barColors: {
+    "NORMAL":        "#22c55e",
+    "LEAKAGE":       "#eab308",
+    "BLOCKAGE":      "#ef4444",
+    "CRITICAL":      "#ef4444",
+    "FULL BLOCKAGE": "#ef4444",
+    "UNKNOWN":       "#6b7280"
+  },
+  fallback: {
+    primary:        "UNKNOWN",
+    secondary:      "Reading is outside all configured ranges. Manual inspection recommended.",
+    fill:           "#6b7280",
+    fontColor:      "#ffffff",
+    alertBg:        "#f3f4f6",
+    alertTextColor: "#374151"
+  }
+};
+
+/* Working merged config */
+let cfg = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+
+/* ============================================================
+   INIT
+   ============================================================ */
+async function init() {
+  startClock();
+
+  try {
+    appA = firebase.initializeApp(FIREBASE_CONFIG_A, 'appA');
+    dbA  = firebase.app('appA').database();
+
+    const samePrj = (FIREBASE_CONFIG_B.projectId === FIREBASE_CONFIG_A.projectId);
+    if (samePrj) { appB = appA; dbB = dbA; }
+    else {
+      appB = firebase.initializeApp(FIREBASE_CONFIG_B, 'appB');
+      dbB  = firebase.app('appB').database();
+    }
+
+    try {
+      appC       = firebase.initializeApp(FIREBASE_CONFIG_C, 'appC');
+      firestoreC = firebase.app('appC').firestore();
+    } catch (e) {
+      console.warn('[Firestore] Project C init failed:', e);
+      firestoreC = null;
+    }
+
+    setConnStatus(true);
+  } catch (e) {
+    console.error('[Firebase init]', e);
+    setConnStatus(false);
+    showLoadingDone();
+    runWithDefaults();
+    return;
+  }
+
+  await loadDBBConfig();
+  subscribeLiveData();
+  initCharts();
+  prefillHistDates();
+  showLoadingDone();
+}
+
+function showLoadingDone() {
+  setTimeout(() => {
+    document.getElementById('loading-overlay').classList.add('hidden');
+  }, 1800);
+}
+
+function runWithDefaults() {
+  cfg = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+  initCharts();
+  prefillHistDates();
+}
+
+/* ============================================================
+   CLOCK
+   ============================================================ */
+function startClock() {
+  const el = document.getElementById('header-time');
+  function tick() { el.textContent = new Date().toLocaleTimeString('en-GB', { hour12: false }); }
+  tick();
+  setInterval(tick, 1000);
+}
+
+/* ============================================================
+   CONNECTION STATUS
+   ============================================================ */
+function setConnStatus(online) {
+  const dot   = document.getElementById('conn-dot');
+  const label = document.getElementById('conn-label');
+  if (online) { dot.classList.remove('offline'); label.textContent = 'Live'; }
+  else        { dot.classList.add('offline');    label.textContent = 'Offline – using fallback config'; }
+}
+
+/* ============================================================
+   LOAD CONFIG FROM DB_B
+   ============================================================ */
+async function loadDBBConfig() {
+  try {
+    const snap = await dbB.ref('dashboardConfig').once('value');
+    if (snap.exists()) cfg = deepMerge(JSON.parse(JSON.stringify(DEFAULT_CONFIG)), snap.val());
+
+    dbB.ref('dashboardConfig').on('value', snap => {
+      if (snap.exists()) {
+        cfg = deepMerge(JSON.parse(JSON.stringify(DEFAULT_CONFIG)), snap.val());
+        redrawAll();
+      }
+    });
+  } catch (e) {
+    console.warn('[DB_B config]', e, '— using defaults');
+  }
+}
+
+function deepMerge(target, source) {
+  for (const key of Object.keys(source || {})) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+      target[key] = target[key] || {};
+      deepMerge(target[key], source[key]);
+    } else {
+      target[key] = source[key];
+    }
+  }
+  return target;
+}
+
+/* ============================================================
+   LIVE DATA SUBSCRIPTION (DB_A)
+   Reads from RTDB_ROOT_NODE using the field-name constants
+   defined at the top.
+   ============================================================ */
+function subscribeLiveData() {
+  dbA.ref(RTDB_ROOT_NODE).on('value', snap => {
+    if (!snap.exists()) return;
+    const raw = snap.val();
+
+    /* Extract using configurable field names */
+    const flow1      = parseFloat(raw[FIELD_FLOW1]      ?? 0);
+    const flow2      = parseFloat(raw[FIELD_FLOW2]      ?? 0);
+    const level1Pct  = parseFloat(raw[FIELD_LEVEL1_PCT] ?? 0);
+    const level2Pct  = parseFloat(raw[FIELD_LEVEL2_PCT] ?? 0);
+
+    sensorData = { flow1, flow2, level1Pct, level2Pct };
+    onNewData(sensorData);
+  }, err => {
+    console.error('[DB_A listener]', err);
+    setConnStatus(false);
+  });
+}
+
+/* ============================================================
+   MAIN DATA HANDLER
+   ============================================================ */
+function onNewData(data) {
+  const { flow1, flow2, level1Pct, level2Pct } = data;
+  const ts = new Date();
+
+  /* ── Compute rise rate ── */
+  if (prevLevel1Pct !== null) {
+    currentRiseRate = level1Pct - prevLevel1Pct;
+  }
+  prevLevel1Pct = level1Pct;
+
+  /* ── Derive system conditions ── */
+  const g              = cfg.global;
+  const equalDev       = parseFloat(g.flow_equality_deviation  ?? 0.05);
+  const lowFlowThresh  = parseFloat(g.low_flow_threshold       ?? 0.5);
+  const rapidRiseThresh= parseFloat(g.rapid_rise_threshold     ?? 2.0);
+  const criticalPct    = parseFloat(g.critical_percent         ?? 59.46);
+
+  const flowDiff   = flow1 - flow2;                  // positive means flow2 < flow1
+  const flowsEqual = Math.abs(flowDiff) <= equalDev;
+  const lowFlow    = flow1 < lowFlowThresh;
+  const rapidRise  = currentRiseRate > rapidRiseThresh;
+  const flow2Low   = flow2 < flow1 - equalDev;       // flow2 meaningfully less than flow1
+
+  /* ── Interpret flowrate condition ── */
+  const flowInterp = interpretFlow(flowsEqual, flow2Low, level1Pct, lowFlow, rapidRise);
+
+  /* ── Interpret manhole conditions ── */
+  const mh1Interp = interpretManhole1(level1Pct, lowFlow, rapidRise, criticalPct);
+  const mh2Interp = interpretManhole2(level2Pct, criticalPct);
+
+  /* ── Update UI ── */
+  updateSVG(level1Pct, level2Pct, flow1, flow2);
+  updateAlerts(level1Pct, level2Pct, flow1, flow2, mh1Interp, mh2Interp, flowInterp);
+  updateManholeCards(level1Pct, level2Pct, mh1Interp, mh2Interp);
+  pushChartPoint(ts, level1Pct, level2Pct, flow1, flow2);
+  logHistorical(level1Pct, level2Pct, flow1, flow2, ts);
+}
+
+function redrawAll() {
+  if (Object.keys(sensorData).length > 0) onNewData(sensorData);
+}
+
+/* ============================================================
+   ╔══════════════════════════════════════════════════════════╗
+   ║             INTERPRETATION ENGINE                       ║
+   ╚══════════════════════════════════════════════════════════╝
+
+   Flow logic (not time-based):
+   ─────────────────────────────────────────────────────────
+   • flowsEqual  → NORMAL
+   • flow2 < flow1 AND no rise of MH1 → LEAKAGE
+   • flow2 < flow1 AND rise of MH1    → BLOCKAGE
+
+   MH1 logic:
+   ─────────────────────────────────────────────────────────
+   • lowFlow AND rapidRise → BLOCKAGE (sewer accumulating)
+   • level1Pct >= criticalPct → CRITICAL
+
+   MH2 logic:
+   ─────────────────────────────────────────────────────────
+   • level2Pct >= criticalPct → CRITICAL
+   ============================================================ */
+
+function interpretFlow(flowsEqual, flow2Low, level1Pct, lowFlow, rapidRise) {
+  if (flowsEqual) {
+    return {
+      primary:        "NORMAL",
+      secondary:      "Flowrate 2 matches Flowrate 1. Pipeline flow is balanced.",
+      fill:           "#22c55e",
+      fontColor:      "#ffffff",
+      alertBg:        "#dcfce7",
+      alertTextColor: "#15803d"
+    };
+  }
+  if (flow2Low && rapidRise) {
+    return {
+      primary:        "BLOCKAGE",
+      secondary:      "Flowrate 2 is lower than Flowrate 1 and Manhole 1 level is rising rapidly. Possible downstream blockage.",
+      fill:           "#ef4444",
+      fontColor:      "#ffffff",
+      alertBg:        "#fee2e2",
+      alertTextColor: "#b91c1c"
+    };
+  }
+  if (flow2Low && !rapidRise) {
+    return {
+      primary:        "LEAKAGE",
+      secondary:      "Flowrate 2 is lower than Flowrate 1 with no significant rise in Manhole 1 level. Possible pipeline leakage.",
+      fill:           "#eab308",
+      fontColor:      "#ffffff",
+      alertBg:        "#fef9c3",
+      alertTextColor: "#a16207"
+    };
+  }
+  /* flow2 > flow1 — unexpected condition */
+  return {
+    primary:        "ANOMALY",
+    secondary:      "Flowrate 2 exceeds Flowrate 1. Check sensor calibration.",
+    fill:           "#8b5cf6",
+    fontColor:      "#ffffff",
+    alertBg:        "#ede9fe",
+    alertTextColor: "#6d28d9"
+  };
+}
+
+function interpretManhole1(level1Pct, lowFlow, rapidRise, criticalPct) {
+  if (level1Pct >= criticalPct) {
+    return {
+      primary:        "CRITICAL",
+      secondary:      "Manhole 1 sewage level is dangerously high. Risk of overflow. Immediate action required.",
+      fill:           "#ef4444",
+      fontColor:      "#ffffff",
+      alertBg:        "#fee2e2",
+      alertTextColor: "#b91c1c"
+    };
+  }
+  if (lowFlow && rapidRise) {
+    return {
+      primary:        "BLOCKAGE",
+      secondary:      "Sewage is accumulating at Manhole 1 while flowrate remains abnormally low. Possible sewer blockage.",
+      fill:           "#ef4444",
+      fontColor:      "#ffffff",
+      alertBg:        "#fee2e2",
+      alertTextColor: "#b91c1c"
+    };
+  }
+  /* Normal — pull colour from config interpretations.manhole1.normal */
+  return cfg?.interpretations?.manhole1?.normal ?? DEFAULT_CONFIG.interpretations.manhole1.normal;
+}
+
+function interpretManhole2(level2Pct, criticalPct) {
+  if (level2Pct >= criticalPct) {
+    return {
+      primary:        "CRITICAL",
+      secondary:      "Manhole 2 sewage level is dangerously high. Risk of overflow. Immediate action required.",
+      fill:           "#ef4444",
+      fontColor:      "#ffffff",
+      alertBg:        "#fee2e2",
+      alertTextColor: "#b91c1c"
+    };
+  }
+  return cfg?.interpretations?.manhole2?.normal ?? DEFAULT_CONFIG.interpretations.manhole2.normal;
+}
+
+/* ============================================================
+   ALERTS
+   ============================================================ */
+function updateAlerts(l1, l2, f1, f2, mh1I, mh2I, flowI) {
+  const container = document.getElementById('alerts-section');
+  const alerts    = [];
+
+  if (mh1I.primary !== 'NORMAL') {
+    alerts.push({ sensor: 'Manhole 1 Level', value: l1.toFixed(2) + '%', interp: mh1I });
+  }
+  if (mh2I.primary !== 'NORMAL') {
+    alerts.push({ sensor: 'Manhole 2 Level', value: l2.toFixed(2) + '%', interp: mh2I });
+  }
+  if (flowI.primary !== 'NORMAL') {
+    alerts.push({ sensor: 'Flow Balance', value: `FR1 ${f1.toFixed(2)} / FR2 ${f2.toFixed(2)} L/min`, interp: flowI });
+  }
+
+  if (alerts.length === 0) {
+    container.innerHTML = `
+      <div class="no-alerts">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        All systems operating normally.
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = alerts.map(a => `
+    <div class="alert-item" style="background:${a.interp.alertBg};">
+      <span class="alert-badge" style="background:${a.interp.fill};color:${a.interp.fontColor};">${escHtml(a.interp.primary)}</span>
+      <span class="alert-text" style="color:${a.interp.alertTextColor};">
+        <strong>${escHtml(a.sensor)}</strong> — ${escHtml(a.interp.secondary)} (${escHtml(a.value)})
+      </span>
+    </div>
+  `).join('');
+}
+
+/* ============================================================
+   SVG ANIMATION
+   ============================================================ */
+function updateSVG(level1Pct, level2Pct, flow1, flow2) {
+  /* Manhole water fills */
+  animateManhole('mh1', level1Pct, MH1_SVG, interpretManhole1(
+    level1Pct,
+    flow1 < parseFloat(cfg.global.low_flow_threshold ?? 0.5),
+    currentRiseRate > parseFloat(cfg.global.rapid_rise_threshold ?? 2.0),
+    parseFloat(cfg.global.critical_percent ?? 59.46)
+  ));
+  animateManhole('mh2', level2Pct, MH2_SVG, interpretManhole2(
+    level2Pct,
+    parseFloat(cfg.global.critical_percent ?? 59.46)
+  ));
+
+  /* Text readings — max 2 decimal places for % */
+  setElText('manhole1reading', level1Pct.toFixed(2) + '%');
+  setElText('manhole2reading', level2Pct.toFixed(2) + '%');
+  setElText('flowrate1reading', flow1.toFixed(2));
+  setElText('flowrate2reading', flow2.toFixed(2));
+
+  /* Gauge needles */
+  animateGauge('flowrate1dial', flow1, GAUGE1_PIVOT);
+  animateGauge('flowrate2dial', flow2, GAUGE2_PIVOT);
+}
+
+/* ── Manhole clip animation ──────────────────────────────── */
+function animateManhole(id, levelPct, bounds, interp) {
+  const clamped = Math.min(Math.max(levelPct, 0), 100);
+  const frac    = clamped / 100;
+  const totalH  = bounds.bottom - bounds.top;
+  const fillH   = frac * totalH;
+  const clipY   = bounds.bottom - fillH;
+
+  const clipRectId = id === 'mh1' ? 'mh1-clip-rect' : 'mh2-clip-rect';
+  const clipRect   = document.getElementById(clipRectId);
+  if (clipRect) {
+    clipRect.setAttribute('y',      clipY.toFixed(2));
+    clipRect.setAttribute('height', fillH.toFixed(2));
+  }
+
+  const contentId = id === 'mh1' ? 'manhole1rcontents' : 'manhole2rcontents';
+  const el        = document.getElementById(contentId);
+  if (el) {
+    el.setAttribute('fill',    interp.fill);
+    el.setAttribute('opacity', '0.82');
+  }
+}
+
+/* ── Gauge needle rotation ───────────────────────────────────
+   The gauge arc sweeps from roughly −90° (left, zero flow)
+   to +90° (right, max flow) around the gauge bowl centre.
+
+   For Gauge 1 (flowrate1dial):
+     The SVG needle's "at-rest" baked-in transform places it
+     pointing hard left (0 flow = −90° position).
+     We need to apply an ADDITIONAL rotation about the pivot
+     to sweep it right as flow increases.
+
+   For Gauge 2 (flowrate2dial):
+     The baked-in transform places it at hard right (+90°).
+     We sweep it left as flow increases (so 0 → right, max → left?
+     No — both gauges should read the same way: left=low, right=high.
+     But from the SVG the user confirmed the dials are at opposite
+     extremes at rest. We handle this by computing the signed angle
+     from the baked-in position.
+
+   Strategy: replace the full transform attribute each update
+   with the baked-in base transform PLUS a rotation about pivot.
+
+   Gauge 1 base transform (from SVG, at minimum/left extreme):
+     matrix(-0.136263, 0.990673, 0.990673, 0.136263, 390.534, 399.558)
+   Gauge 2 base transform (from SVG, at maximum/right extreme):
+     matrix(-0.15852, -0.987356, -0.987356, 0.15852, 870.59, 407.174)
+
+   Because the user confirmed: gauge1 is at lower extreme and
+   gauge2 is at higher extreme — meaning at zero flow the needle
+   should point left (−90°) and at max it points right (+90°).
+   
+   We compute a sweep angle:
+     sweepAngle = (flow / flowExtremeMax) * 180 − 90   (degrees)
+     → sweepAngle = −90 at flow=0, +90 at flow=max
+
+   Then rotate the needle around its gauge pivot by sweepAngle.
+   We replace the element's transform with:
+     rotate(sweepAngle, pivotCx, pivotCy)
+   combined with the needle's local offset so the tip stays on
+   the gauge arc. We derive the needle origin offsets from the
+   baked-in transforms.
+
+   Gauge 1 needle origin (translate part of matrix):  (390.534, 399.558)
+   Gauge 2 needle origin (translate part of matrix):  (870.59,  407.174)
+   ──────────────────────────────────────────────────────────────── */
+function animateGauge(dialId, flowValue, pivot) {
+  const maxFlow   = parseFloat(cfg?.global?.flowrate_extreme_max ?? 3.4);
+  const clamped   = Math.min(Math.max(flowValue, 0), maxFlow);
+  const frac      = clamped / maxFlow;                 // 0 → 1
+  const sweepDeg  = frac * 180 - 90;                  // −90° → +90°
+
+  const el = document.getElementById(dialId);
+  if (!el) return;
+
+  /*
+    We rotate the entire needle element around the gauge bowl
+    centre (pivot.cx, pivot.cy) by sweepDeg degrees.
+    This replaces whatever baked-in transform the element has,
+    so we wrap it: translate to pivot → rotate → translate back
+    → apply the needle's local position offset.
+
+    Needle local origin offsets (extracted from SVG matrix translate):
+      flowrate1dial → tx=390.534, ty=399.558
+      flowrate2dial → tx=870.59,  ty=407.174
+  */
+  const needleOrigin = (dialId === 'flowrate1dial')
+    ? { tx: 390.534, ty: 399.558 }
+    : { tx: 870.59,  ty: 407.174 };
+
+  const rad    = sweepDeg * Math.PI / 180;
+  const cosA   = Math.cos(rad);
+  const sinA   = Math.sin(rad);
+
+  /*
+    Full transform:
+      1. Place needle at its origin relative to gauge pivot
+      2. Rotate by sweepDeg around pivot
+    Since SVG transforms are applied right-to-left:
+      final = rotate(sweepDeg, pivot) * translate(needleOrigin)
+    We express as a single matrix for precision.
+    Needle tip vector from pivot = (needleOrigin.tx − pivot.cx, needleOrigin.ty − pivot.cy)
+    After rotation around pivot:
+      tx_new = pivot.cx + (tx−pivot.cx)*cos − (ty−pivot.cy)*sin
+      ty_new = pivot.cy + (tx−pivot.cx)*sin + (ty−pivot.cy)*cos
+  */
+  const dx     = needleOrigin.tx - pivot.cx;
+  const dy     = needleOrigin.ty - pivot.cy;
+  const txNew  = pivot.cx + dx * cosA - dy * sinA;
+  const tyNew  = pivot.cy + dx * sinA + dy * cosA;
+
+  /*
+    The needle path itself has a local orientation encoded in the
+    baked-in matrix's rotation part. We must preserve that so the
+    needle shape points toward the pivot. 
+    Gauge 1 local rotation ≈ atan2(0.990673, -0.136263) ≈ 97.8°
+    Gauge 2 local rotation ≈ atan2(-0.987356, -0.15852)  ≈ −99.1°
+    For both we want the needle tip to point toward the pivot centre
+    at all sweep angles. We re-derive the combined rotation matrix:
+      local rotation (needle body) + sweep rotation around pivot
+
+    Simpler approach: use SVG rotate() + the baked local transform.
+    We apply: rotate(sweepDeg, pivot.cx, pivot.cy) as an outer
+    transform on top of the baked matrix. We do this by setting
+    a transform attribute that wraps the original.
+
+    Cleanest SVG way: store original transform, then:
+      transform="rotate(sweepDeg pivotX pivotY) <originalTransform>"
+    But SVG doesn't allow nested transform strings directly in one
+    attribute. We compose manually via matrix multiplication.
+
+    Gauge 1 local matrix: (-0.136263, 0.990673, 0.990673, 0.136263)
+    Gauge 2 local matrix: (-0.15852, -0.987356, -0.987356, 0.15852)
+  */
+  const localMatrix = (dialId === 'flowrate1dial')
+    ? { a: -0.136263, b:  0.990673, c:  0.990673, d:  0.136263 }
+    : { a: -0.15852,  b: -0.987356, c: -0.987356, d:  0.15852  };
+
+  /* Compose: R_sweep * M_local, then apply translate (txNew, tyNew) */
+  const na = cosA * localMatrix.a - sinA * localMatrix.c;
+  const nb = cosA * localMatrix.b - sinA * localMatrix.d;
+  const nc = sinA * localMatrix.a + cosA * localMatrix.c;
+  const nd = sinA * localMatrix.b + cosA * localMatrix.d;
+
+  el.setAttribute('transform',
+    `matrix(${na.toFixed(6)},${nb.toFixed(6)},${nc.toFixed(6)},${nd.toFixed(6)},${txNew.toFixed(3)},${tyNew.toFixed(3)})`
+  );
+}
+
+/* ============================================================
+   MANHOLE CARDS
+   ============================================================ */
+function updateManholeCards(l1Pct, l2Pct, mh1I, mh2I) {
+  updateCard('mh1', l1Pct, mh1I);
+  updateCard('mh2', l2Pct, mh2I);
+}
+
+function updateCard(id, levelPct, interp) {
+  const opMaxPct  = parseFloat(cfg?.global?.[id === 'mh1' ? 'manhole1_op_max_pct' : 'manhole2_op_max_pct'] ?? 59.46);
+  const meta      = cfg?.manholes?.[id];
+  const barPct    = Math.min((levelPct / opMaxPct) * 100, 100).toFixed(1);
+  const barColor  = cfg?.barColors?.[interp.primary] ?? interp.fill;
+
+  setElText(`${id}-reading`, levelPct.toFixed(2) + '%');
+
+  const badge = document.getElementById(`${id}-badge`);
+  if (badge) {
+    badge.textContent         = interp.primary;
+    badge.style.background    = interp.fill;
+    badge.style.color         = interp.fontColor;
+  }
+
+  const bar = document.getElementById(`${id}-bar`);
+  if (bar) {
+    bar.style.width      = barPct + '%';
+    bar.style.background = barColor;
+  }
+
+  const barMaxEl = document.getElementById(`${id}-bar-max`);
+  if (barMaxEl) barMaxEl.textContent = `${opMaxPct.toFixed(2)}% (op. max)`;
+
+  if (meta) {
+    setElText(`${id}-address`, meta.address ?? '--');
+    const c = meta.coords;
+    setElText(`${id}-coords`, c ? `${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}` : '--');
+  }
+}
+
+/* ============================================================
+   LIVE CHARTS
+   ============================================================ */
+function initCharts() {
+  const commonOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 400 },
+    plugins: {
+      legend:  { labels: { font: { family: 'DM Sans', size: 12 }, boxWidth: 12 } },
+      tooltip: { mode: 'index', intersect: false }
+    },
+    scales: {
+      x: {
+        type: 'time',
+        time: { unit: 'minute', displayFormats: { minute: 'HH:mm' } },
+        ticks: { font: { family: 'DM Mono', size: 10 }, color: '#6b7280' },
+        grid:  { color: '#f3f4f6' }
+      },
+      y: {
+        ticks: { font: { family: 'DM Sans', size: 11 }, color: '#6b7280' },
+        grid:  { color: '#f3f4f6' }
+      }
+    }
+  };
+
+  /* Levels chart */
+  chartLevels = new Chart(
+    document.getElementById('chart-levels').getContext('2d'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: 'Manhole 1 (%)', data: [], borderColor: '#14b8a6', backgroundColor: 'rgba(20,184,166,.1)', borderWidth: 2, pointRadius: 2, tension: 0.4, fill: true },
+        { label: 'Manhole 2 (%)', data: [], borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,.08)', borderWidth: 2, pointRadius: 2, tension: 0.4, fill: true }
+      ]
+    },
+    options: { ...commonOptions, scales: { ...commonOptions.scales, y: { ...commonOptions.scales.y, min: 0, max: 100 } } }
+  });
+
+  /* Flowrate chart — now TWO datasets */
+  chartFlowrate = new Chart(
+    document.getElementById('chart-flowrate').getContext('2d'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: 'Flowrate 1 (L/min)', data: [], borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,.1)', borderWidth: 2, pointRadius: 2, tension: 0.4, fill: true },
+        { label: 'Flowrate 2 (L/min)', data: [], borderColor: '#ec4899', backgroundColor: 'rgba(236,72,153,.07)', borderWidth: 2, pointRadius: 2, tension: 0.4, fill: true }
+      ]
+    },
+    options: { ...commonOptions, scales: { ...commonOptions.scales, y: { ...commonOptions.scales.y, min: 0 } } }
+  });
+
+  /* Historical chart — 4 datasets */
+  chartHistorical = new Chart(
+    document.getElementById('chart-historical').getContext('2d'), {
+    type: 'line',
+    data: {
+      datasets: [
+        { label: 'Manhole 1 (%)',      data: [], borderColor: '#14b8a6', borderWidth: 2, pointRadius: 2, tension: 0.4, fill: false },
+        { label: 'Manhole 2 (%)',      data: [], borderColor: '#f97316', borderWidth: 2, pointRadius: 2, tension: 0.4, fill: false },
+        { label: 'Flowrate 1 (L/min)', data: [], borderColor: '#8b5cf6', borderWidth: 2, pointRadius: 2, tension: 0.4, fill: false },
+        { label: 'Flowrate 2 (L/min)', data: [], borderColor: '#ec4899', borderWidth: 2, pointRadius: 2, tension: 0.4, fill: false }
+      ]
+    },
+    options: { ...commonOptions }
+  });
+}
+
+function pushChartPoint(ts, l1, l2, f1, f2) {
+  const maxPts = parseInt(cfg?.global?.chart_rolling_points ?? CHART_MAX_POINTS);
+
+  const addPt = (chart, dsIdx, val) => {
+    chart.data.datasets[dsIdx].data.push({ x: ts, y: val });
+    if (chart.data.datasets[dsIdx].data.length > maxPts)
+      chart.data.datasets[dsIdx].data.shift();
+  };
+
+  addPt(chartLevels,   0, l1);
+  addPt(chartLevels,   1, l2);
+  chartLevels.update('none');
+
+  addPt(chartFlowrate, 0, f1);
+  addPt(chartFlowrate, 1, f2);
+  chartFlowrate.update('none');
+}
+
+/* ============================================================
+   HISTORICAL DATA (Firestore — Project C)
+   ============================================================ */
+function logHistorical(l1, l2, f1, f2, ts) {
+  if (!firestoreC) return;
+  const minute = ts.getMinutes();
+  if (minute === lastLoggedMinute) return;
+  lastLoggedMinute = minute;
+
+  firestoreC.collection(HIST_COLLECTION).add({
+    timestamp:    firebase.firestore.Timestamp.fromDate(ts),
+    level1Pct:    l1,
+    level2Pct:    l2,
+    flowrate1:    f1,
+    flowrate2:    f2
+  }).catch(e => console.warn('[Firestore log]', e));
+}
+
+function prefillHistDates() {
+  const now  = new Date();
+  const from = new Date(now.getTime() - 3600 * 1000);
+  document.getElementById('hist-to').value   = toLocalISO(now);
+  document.getElementById('hist-from').value = toLocalISO(from);
+}
+
+function toLocalISO(d) {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+async function loadHistorical() {
+  if (!firestoreC) {
+    alert('Historical data not available. Firestore Project C not configured.');
+    return;
+  }
+  const fromVal = document.getElementById('hist-from').value;
+  const toVal   = document.getElementById('hist-to').value;
+  if (!fromVal || !toVal) { alert('Please select both dates.'); return; }
+
+  const fromTs = firebase.firestore.Timestamp.fromDate(new Date(fromVal));
+  const toTs   = firebase.firestore.Timestamp.fromDate(new Date(toVal));
+
+  try {
+    const snap = await firestoreC.collection(HIST_COLLECTION)
+      .where('timestamp', '>=', fromTs)
+      .where('timestamp', '<=', toTs)
+      .orderBy('timestamp', 'asc')
+      .limit(2000)
+      .get();
+
+    histRecords = snap.docs.map(d => d.data());
+
+    chartHistorical.data.datasets[0].data = histRecords.map(r => ({ x: r.timestamp.toDate(), y: r.level1Pct   }));
+    chartHistorical.data.datasets[1].data = histRecords.map(r => ({ x: r.timestamp.toDate(), y: r.level2Pct   }));
+    chartHistorical.data.datasets[2].data = histRecords.map(r => ({ x: r.timestamp.toDate(), y: r.flowrate1   }));
+    chartHistorical.data.datasets[3].data = histRecords.map(r => ({ x: r.timestamp.toDate(), y: r.flowrate2   }));
+    chartHistorical.update();
+
+    document.getElementById('hist-count').textContent = `${histRecords.length} records loaded.`;
+  } catch (e) {
+    console.error('[Historical query]', e);
+    alert('Query failed: ' + e.message + '\n\nCheck Firestore rules and indexes in Project C.');
+  }
+}
+
+function exportCSV() {
+  if (!histRecords.length) { alert('No records loaded. Run a query first.'); return; }
+
+  const header = 'timestamp,level1_pct,level2_pct,flowrate1_Lmin,flowrate2_Lmin\n';
+  const rows   = histRecords.map(r =>
+    `${r.timestamp.toDate().toISOString()},${r.level1Pct},${r.level2Pct},${r.flowrate1},${r.flowrate2}`
+  ).join('\n');
+
+  const blob = new Blob([header + rows], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: `sewer-history-${Date.now()}.csv` });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ============================================================
+   MAP (Leaflet + OpenStreetMap)
+   ============================================================ */
+function openMap(manholeId) {
+  const meta = cfg?.manholes?.[manholeId];
+  if (!meta?.coords) { alert('Location not configured.'); return; }
+
+  const { lat, lng } = meta.coords;
+  const name = manholeId === 'mh1' ? 'Manhole 1' : 'Manhole 2';
+
+  document.getElementById('map-modal').classList.add('active');
+  document.getElementById('map-modal-title').textContent = `Directions to ${name} – ${meta.address ?? ''}`;
+
+  setTimeout(() => {
+    if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+    leafletMap = L.map('map-container').setView([lat, lng], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(leafletMap);
+
+    L.marker([lat, lng]).addTo(leafletMap)
+      .bindPopup(`<b>${name}</b><br>${meta.address ?? ''}<br><small>${lat.toFixed(5)}, ${lng.toFixed(5)}</small>`)
+      .openPopup();
+
+    const panel = L.control({ position: 'topright' });
+    panel.onAdd = function() {
+      const d = L.DomUtil.create('div');
+      d.style.cssText = 'background:white;padding:8px 14px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer;font-family:DM Sans,sans-serif;font-size:13px;font-weight:600;color:#0f6b62;';
+      d.textContent   = 'Open in OpenStreetMap';
+      d.onclick       = () => window.open(`https://www.openstreetmap.org/directions?from=&to=${lat},${lng}`, '_blank');
+      return d;
+    };
+    panel.addTo(leafletMap);
+  }, 100);
+}
+
+function closeMap() {
+  document.getElementById('map-modal').classList.remove('active');
+}
+
+/* ============================================================
+   UTILITIES
+   ============================================================ */
+function setElText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
