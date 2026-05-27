@@ -457,17 +457,25 @@ body {
           <rect x="0" y="0" width="1280" height="720" fill="#FFFFFF"/>
 
           <!-- ── MANHOLE WATER FILLS (clipped) ── -->
-          <path
-            d="M 156.875,286.549 c 22.375,0.615 44.75,6.762 67.125,1.844 29.833,-6.557 59.667,6.557 89.5,0 v 8.622 89.584 92.901 h -179 v -92.901 -89.584 -8.622 c 7.458,-1.639 14.917,-2.049 22.375,-1.844 z"
-            fill="#8FAADC" fill-rule="evenodd"
-            id="manhole1rcontents"
-            clip-path="url(#mh1-clip)"/>
+          <rect
+    x="133"
+    y="206"
+    width="180"
+    height="273"
+    fill="#8FAADC"
+    id="manhole1rcontents"
+    clip-path="url(#mh1-clip)"
+/>
 
-          <path
-            d="M958 421.543C980.5 422.085 1003 427.499 1025.5 423.167 1055.5 417.391 1085.5 428.943 1115.5 423.167L1115.5 430.762 1115.5 509.67 1115.5 591.5 935.5 591.5 935.5 509.67 935.5 430.762 935.5 423.167C943 421.723 950.5 421.362 958 421.543Z"
-            fill="#8FAADC" fill-rule="evenodd"
-            id="manhole2rcontents"
-            clip-path="url(#mh2-clip)"/>
+          <rect
+    x="935"
+    y="319"
+    width="181"
+    height="273"
+    fill="#8FAADC"
+    id="manhole2rcontents"
+    clip-path="url(#mh2-clip)"
+/>
 
           <!-- ── STRUCTURAL ELEMENTS ── -->
           <!-- Manhole 1 shell -->
@@ -779,7 +787,7 @@ const CHART_MAX_POINTS = 60;
    These are the top/bottom of the fillable area used by
    the clip-rect animation.
    ============================================================ */
-const MH1_SVG = { top: 206, bottom: 479 };
+const MH1_SVG = { top: 206, bottom: 479 };   // shell top & bottom y
 const MH2_SVG = { top: 319, bottom: 592 };   // shell top & bottom y
 
 /* ============================================================
@@ -805,9 +813,9 @@ const DEFAULT_CONFIG = {
   global: {
     /* Manhole fill thresholds — now in % (0–100) */
     manhole1_physical_max_pct: 100,
-    manhole1_op_max_pct:        61.1,   /* 11/18.5 * 100 */
+    manhole1_op_max_pct:        59.46,   /* 11/18.5 * 100 */
     manhole2_physical_max_pct: 100,
-    manhole2_op_max_pct:        61.1,
+    manhole2_op_max_pct:        59.46,
 
     /* Flowrate thresholds (L/min) — same for both meters */
     flowrate_op_max:            3.0,
@@ -828,7 +836,7 @@ const DEFAULT_CONFIG = {
     flow_equality_deviation:    0.05,    /* L/min */
     low_flow_threshold:         0.5,     /* L/min */
     rapid_rise_threshold:       2.0,     /* % per reading */
-    critical_percent:           61.1    /* = op_max % */
+    critical_percent:           59.46    /* = op_max % */
   },
   manholes: {
     mh1: {
@@ -1204,11 +1212,11 @@ function updateSVG(level1Pct, level2Pct, flow1, flow2) {
     level1Pct,
     flow1 < parseFloat(cfg.global.low_flow_threshold ?? 0.5),
     currentRiseRate > parseFloat(cfg.global.rapid_rise_threshold ?? 2.0),
-    parseFloat(cfg.global.critical_percent ?? 61.1)
+    parseFloat(cfg.global.critical_percent ?? 59.46)
   ));
   animateManhole('mh2', level2Pct, MH2_SVG, interpretManhole2(
     level2Pct,
-    parseFloat(cfg.global.critical_percent ?? 61.1)
+    parseFloat(cfg.global.critical_percent ?? 59.46)
   ));
 
   /* Text readings — max 2 decimal places for % */
@@ -1227,7 +1235,7 @@ function animateManhole(id, levelPct, bounds, interp) {
   const clamped = Math.min(Math.max(levelPct, 0), 100);
   const frac    = clamped / 100;
   const totalH  = bounds.bottom - bounds.top;
-  const fillH = frac * totalH;
+  const fillH   = frac * totalH;
   const clipY   = bounds.bottom - fillH;
 
   const clipRectId = id === 'mh1' ? 'mh1-clip-rect' : 'mh2-clip-rect';
