@@ -779,8 +779,8 @@ const CHART_MAX_POINTS = 60;
    These are the top/bottom of the fillable area used by
    the clip-rect animation.
    ============================================================ */
-const MH1_SVG = { top: 206, bottom: 479 };   // shell top & bottom y
-const MH2_SVG = { top: 319, bottom: 592 };   // shell top & bottom y
+const MH1_SVG = { top: 286, bottom: 479 };
+const MH2_SVG = { top: 421, bottom: 592 };   // shell top & bottom y
 
 /* ============================================================
    GAUGE PIVOT POINTS & NEEDLE SWEEP
@@ -1204,11 +1204,11 @@ function updateSVG(level1Pct, level2Pct, flow1, flow2) {
     level1Pct,
     flow1 < parseFloat(cfg.global.low_flow_threshold ?? 0.5),
     currentRiseRate > parseFloat(cfg.global.rapid_rise_threshold ?? 2.0),
-    parseFloat(cfg.global.critical_percent ?? 59.46)
+    parseFloat(cfg.global.critical_percent ?? 61.1)
   ));
   animateManhole('mh2', level2Pct, MH2_SVG, interpretManhole2(
     level2Pct,
-    parseFloat(cfg.global.critical_percent ?? 59.46)
+    parseFloat(cfg.global.critical_percent ?? 61.1)
   ));
 
   /* Text readings — max 2 decimal places for % */
@@ -1227,7 +1227,7 @@ function animateManhole(id, levelPct, bounds, interp) {
   const clamped = Math.min(Math.max(levelPct, 0), 100);
   const frac    = clamped / 100;
   const totalH  = bounds.bottom - bounds.top;
-  const fillH   = frac * totalH;
+  const fillH = frac * totalH + 3;
   const clipY   = bounds.bottom - fillH;
 
   const clipRectId = id === 'mh1' ? 'mh1-clip-rect' : 'mh2-clip-rect';
